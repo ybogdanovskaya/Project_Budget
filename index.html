@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PM Sandbox</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Кастомный скроллбар для таблицы */
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Стили для тултипа */
+        .tooltip { position: relative; cursor: help; border-bottom: 1px dashed #94a3b8; }
+        .tooltip .tooltip-text {
+            visibility: hidden; width: 220px; background-color: #1e293b; color: #fff;
+            text-align: center; border-radius: 6px; padding: 8px; position: absolute;
+            z-index: 10; bottom: 125%; left: 50%; margin-left: -110px; opacity: 0;
+            transition: opacity 0.3s; font-size: 0.75rem; font-weight: normal; line-height: 1.4;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .tooltip .tooltip-text::after {
+            content: ""; position: absolute; top: 100%; left: 50%;
+            margin-left: -5px; border-width: 5px; border-style: solid;
+            border-color: #1e293b transparent transparent transparent;
+        }
+        .tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex flex-col sm:flex-row gap-4 justify-between items-center shadow-sm">
+        <div>
+            <h1 class="text-xl font-bold text-slate-900 tracking-tight">PM Sandbox</h1>
+            <p class="text-xs text-slate-500 mt-1">Интерактивный симулятор экономики проекта</p>
+        </div>
+        <div class="flex gap-3">
+            <button id="btnExportExcel" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                В Excel
+            </button>
+            <button id="btnExportPDF" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                В PDF
+            </button>
+        </div>
+    </header>
+
+    <main class="p-6 w-full max-w-[1600px] mx-auto flex flex-col xl:flex-row gap-6 items-start" id="dashboard-content">
+        
+        <!-- Левая панель: Глобальные параметры -->
+        <aside class="w-full xl:w-80 shrink-0 flex flex-col gap-5">
+            
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Основные параметры</h2>
+                <div class="flex flex-col gap-3">
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Выручка, ₽</label>
+                        <input type="text" id="g_revenue" value="20 000 000" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-100 mt-1 mb-2 gap-2">
+                        <label class="text-xs text-slate-500 font-medium" title="Выручка для достижения целевой маржи с учетом расходов">Мин. выручка, ₽</label>
+                        <span id="v_minRevenue" class="text-sm font-semibold text-slate-800 text-right">0</span>
+                    </div>
+                    <div class="flex justify-between items-center gap-2 mt-1">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Длительность, мес</label>
+                        <input type="text" id="g_duration" value="6" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Закупки (разово), ₽</label>
+                        <input type="text" id="g_purchases" value="0" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium leading-tight pr-2">Накладные расходы, %</label>
+                        <input type="text" id="g_overheads" value="24" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Цел. маржа, %</label>
+                        <input type="text" id="g_margin" value="15" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                <h2 class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-1">Нагрузка на ФОТ</h2>
+                <p class="text-xs text-slate-500 mb-4 border-b border-slate-100 pb-2">Затраты из расчета на каждого штатного сотрудника</p>
+                <div class="flex flex-col gap-3">
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Налог на ФОТ, %</label>
+                        <input type="text" id="g_tax" value="30" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Годовая премия, %</label>
+                        <input type="text" id="g_bonus" value="0" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Подбор (разово), ₽</label>
+                        <input type="text" id="g_onboarding" value="50 000" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center mt-2 pt-2 border-t border-slate-100 gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">Аренда (мес), ₽</label>
+                        <input type="text" id="g_rent" value="15 000" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">ДМС (мес), ₽</label>
+                        <input type="text" id="g_perks" value="10 000" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                    <div class="flex justify-between items-center gap-2">
+                        <label class="text-sm text-slate-600 font-medium whitespace-nowrap">ИТ (мес), ₽</label>
+                        <input type="text" id="g_it" value="5 000" class="w-32 text-right p-1.5 border border-slate-300 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all">
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <div class="flex-1 flex flex-col gap-6 w-full min-w-0">
+            
+            <!-- Дашборд KPI -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+                    <h3 class="text-sm font-medium text-slate-500 mb-1">Общий РДБ (Лимит)</h3>
+                    <div class="text-2xl font-bold text-slate-800" id="v_rdb">0 ₽</div>
+                    <div class="text-xs text-slate-400 mt-2">Доступно на расходы</div>
+                </div>
+
+                <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm relative overflow-hidden" id="card_rdb_left">
+                    <div class="flex justify-between items-start mb-1">
+                        <h3 class="text-sm font-medium text-slate-500">Остаток РДБ</h3>
+                    </div>
+                    <div class="text-2xl font-bold text-slate-800" id="v_rdb_left">0 ₽</div>
+                    
+                    <div class="flex justify-between items-end mt-3 mb-1">
+                        <span class="text-xs font-semibold text-slate-600 tooltip">
+                            Все расходы: <span id="v_all_expenses">0 ₽</span>
+                            <span class="tooltip-text">Включает: затраты на команду (с налогами), стоимость подбора и разовые закупки.</span>
+                        </span>
+                    </div>
+                    <div class="w-full bg-slate-100 rounded-full h-1.5">
+                        <div class="bg-blue-500 h-1.5 rounded-full transition-all duration-500" id="bar_rdb_left" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm" id="card_profit">
+                    <h3 class="text-sm font-medium text-slate-500 mb-1">Ожидаемая прибыль</h3>
+                    <div class="text-2xl font-bold text-green-600" id="v_profit">0 ₽</div>
+                    <div class="text-xs text-slate-400 mt-2">После всех расходов и налогов</div>
+                </div>
+
+                <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm transition-colors" id="card_margin">
+                    <h3 class="text-sm font-medium text-slate-500 mb-1">Текущая маржинальность</h3>
+                    <div class="text-2xl font-bold text-slate-800" id="v_margin_percent">0%</div>
+                    <div class="text-xs text-slate-400 mt-2">Цель: <span id="v_target_margin">15</span>%</div>
+                </div>
+
+            </div>
+
+            <!-- Таблица команды -->
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col overflow-hidden">
+                <div class="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Конструктор команды</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Итоговая сумма включает затраты на персонал, подбор и разовые закупки</p>
+                    </div>
+                    <button id="addMemberBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm shrink-0">
+                        + Добавить роль
+                    </button>
+                </div>
+                
+                <div class="overflow-x-auto custom-scroll pb-2">
+                    <table class="w-full min-w-[900px] text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100 text-xs text-slate-600 border-b border-slate-200 uppercase tracking-wider">
+                                <th class="p-3 font-semibold w-10 text-center">№</th>
+                                <th class="p-3 font-semibold w-2/12">Роль / Позиция</th>
+                                <th class="p-3 font-semibold w-2/12">Занятость</th>
+                                <th class="p-3 font-semibold w-1/12">Грейд</th>
+                                <th class="p-3 font-semibold w-2/12">Оклад / Ставка(час)</th>
+                                <th class="p-3 font-semibold w-1/12">Часы (в мес)</th>
+                                <th class="p-3 font-semibold w-2/12 text-right" title="Реальная стоимость часа для компании">True Cost (час)</th>
+                                <th class="p-3 font-semibold w-2/12 text-right">Сумма</th>
+                                <th class="p-3 font-semibold w-12 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="teamBody" class="divide-y divide-slate-100 text-sm">
+                            <!-- Строки генерируются JS -->
+                        </tbody>
+                        <tfoot id="teamFoot" class="bg-slate-50/80 border-t-2 border-slate-300 text-sm hidden">
+                            <!-- Итого генерируется JS -->
+                        </tfoot>
+                    </table>
+                    
+                    <div id="emptyState" class="p-12 flex flex-col items-center justify-center text-slate-400">
+                        <svg class="w-12 h-12 mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                        <p>Команда пуста. Добавьте специалистов.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Блок Алертов -->
+            <div id="alertsContainer" class="flex flex-col gap-3"></div>
+
+        </div>
+    </main>
+
+    <script>
+        // Утилиты форматирования
+        function formatNumberStr(num) {
+            if (num === null || num === undefined || isNaN(num)) return "0";
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+        }
+
+        function parseNumberStr(str) {
+            if (str === null || str === undefined) return 0;
+            return parseFloat(str.toString().replace(/\s/g, '')) || 0;
+        }
+
+        function formatCurrency(num) {
+            return formatNumberStr(Math.round(num)) + ' ₽';
+        }
+
+        // Состояние приложения
+        const state = {
+            globals: {
+                revenue: 20000000,
+                duration: 6,
+                purchases: 0,
+                overheads: 24,
+                margin: 15,
+                tax: 30,
+                bonus: 0,
+                onboarding: 50000,
+                rent: 15000,
+                perks: 10000,
+                it: 5000
+            },
+            team: []
+        };
+
+        // DOM элементы
+        const els = {
+            inputs: document.querySelectorAll('aside input'),
+            teamBody: document.getElementById('teamBody'),
+            teamFoot: document.getElementById('teamFoot'),
+            emptyState: document.getElementById('emptyState'),
+            addMemberBtn: document.getElementById('addMemberBtn'),
+            alertsContainer: document.getElementById('alertsContainer'),
+            
+            // Вывод
+            v_rdb: document.getElementById('v_rdb'),
+            v_rdb_left: document.getElementById('v_rdb_left'),
+            v_profit: document.getElementById('v_profit'),
+            v_margin_percent: document.getElementById('v_margin_percent'),
+            v_target_margin: document.getElementById('v_target_margin'),
+            v_minRevenue: document.getElementById('v_minRevenue'),
+            v_all_expenses: document.getElementById('v_all_expenses'),
+            
+            card_margin: document.getElementById('card_margin'),
+            card_rdb_left: document.getElementById('card_rdb_left'),
+            bar_rdb_left: document.getElementById('bar_rdb_left')
+        };
+
+        function calculateMetrics() {
+            const g = state.globals;
+            const duration = g.duration > 0 ? g.duration : 1;
+            
+            // Базовый расчет РДБ
+            const corpTaxAmount = g.revenue * (g.overheads / 100);
+            const marginAmount = g.revenue * (g.margin / 100);
+            const totalRDB = g.revenue - corpTaxAmount - marginAmount;
+
+            let pureTeamCost = 0;
+            let costContractors = 0;
+            let inhouseCount = 0;
+            let countJunior = 0;
+            let countSeniorOrLead = 0;
+
+            const enrichedTeam = state.team.map(member => {
+                let trueHourlyRate = 0;
+                let memberTotalCost = 0;
+                const hours = parseInt(member.hours) || 0;
+                const totalProjectHours = hours * duration;
+                
+                if (member.type === 'inhouse') {
+                    inhouseCount++;
+                    const salary = parseNumberStr(member.basis);
+                    const taxCost = salary * (g.tax / 100);
+                    const bonusCost = salary * (g.bonus / 100);
+                    // Сумма затрат на сотрудника в месяц
+                    const totalMonthlyCost = salary + taxCost + bonusCost + g.rent + g.perks + g.it;
+                    trueHourlyRate = totalMonthlyCost / 160;
+                    memberTotalCost = trueHourlyRate * totalProjectHours;
+                } else {
+                    const rate = parseNumberStr(member.basis);
+                    trueHourlyRate = rate * 1.06; // Налог 6% для ИП/Самозанятых
+                    memberTotalCost = trueHourlyRate * totalProjectHours;
+                    costContractors += memberTotalCost;
+                }
+
+                pureTeamCost += memberTotalCost;
+
+                if (member.grade === 'junior') countJunior++;
+                if (member.grade === 'senior' || member.grade === 'lead') countSeniorOrLead++;
+
+                return { ...member, trueHourlyRate, memberTotalCost };
+            });
+
+            const hiringCost = inhouseCount * g.onboarding;
+            const allExpenses = pureTeamCost + hiringCost + g.purchases;
+
+            // Риски и резервный фонд ГПХ
+            const alerts = [];
+            let reserveFund = 0;
+            let reserveRate = 0;
+            const contractorShare = pureTeamCost > 0 ? (costContractors / pureTeamCost) * 100 : 0;
+
+            if (contractorShare > 70) {
+                reserveRate = 15;
+            } else if (contractorShare > 50) {
+                reserveRate = 10;
+            } else if (contractorShare > 30) {
+                reserveRate = 5;
+            }
+
+            reserveFund = costContractors * (reserveRate / 100);
+
+            if (reserveRate > 0) {
+                alerts.push({
+                    type: 'warning',
+                    title: 'Риск ГПХ (Зависимость)',
+                    msg: `Доля затрат на подрядчиков составляет ${contractorShare.toFixed(1)}% от стоимости команды. Сформирован резерв ${reserveRate}% от стоимости подрядчиков (${formatCurrency(reserveFund)}).`
+                });
+            }
+
+            if (countJunior > countSeniorOrLead) {
+                alerts.push({
+                    type: 'info',
+                    title: 'Риск компетенций (Junior-эффект)',
+                    msg: 'В команде Junior-специалистов больше, чем Senior/Lead. Риск падения качества кода. Заложите больше часов на ревью.'
+                });
+            }
+
+            const rdbLeft = totalRDB - reserveFund - allExpenses;
+            
+            if (rdbLeft < 0) {
+                alerts.push({
+                    type: 'error',
+                    title: 'Бюджет проекта превышен!',
+                    msg: 'Вы съедаете целевую маржу проекта. Скорректируйте состав команды, закупки или договоритесь об увеличении выручки.'
+                });
+            }
+
+            const expectedProfit = g.revenue - corpTaxAmount - allExpenses - reserveFund;
+            const currentMargin = g.revenue > 0 ? (expectedProfit / g.revenue) * 100 : 0;
+
+            // Расчет минимально необходимой выручки:
+            let minRevenue = null;
+            const divisor = (1 - (g.overheads / 100) - (g.margin / 100));
+            if (divisor > 0) {
+                minRevenue = (allExpenses + reserveFund) / divisor;
+            } else {
+                alerts.push({
+                    type: 'error',
+                    title: 'Расчет минимальной выручки невозможен',
+                    msg: 'Сумма накладных расходов и целевой маржи должна быть меньше 100%. В текущей конфигурации на покрытие расходов проекта не остается выручки.'
+                });
+            }
+
+            return {
+                totalRDB, allExpenses, rdbLeft, expectedProfit, currentMargin, 
+                alerts, pureTeamCost, enrichedTeam, minRevenue
+            };
+        }
+
+        function calculateAndUpdate() {
+            const m = calculateMetrics();
+            const rdbPercent = m.totalRDB > 0 ? ((m.totalRDB - m.rdbLeft) / m.totalRDB) * 100 : 0;
+
+            // Обновление карточек
+            els.v_rdb.textContent = formatCurrency(m.totalRDB);
+            els.v_rdb_left.textContent = formatCurrency(m.rdbLeft);
+            els.v_all_expenses.textContent = formatCurrency(m.allExpenses);
+            els.v_profit.textContent = formatCurrency(m.expectedProfit);
+            els.v_margin_percent.textContent = m.currentMargin.toFixed(1) + '%';
+            els.v_target_margin.textContent = state.globals.margin;
+            els.v_minRevenue.textContent = m.minRevenue === null ? 'Расчет невозможен' : formatCurrency(m.minRevenue);
+
+            // Цвета и стили
+            if (m.rdbLeft < 0) {
+                els.v_rdb_left.classList.replace('text-slate-800', 'text-red-600');
+                els.bar_rdb_left.classList.replace('bg-blue-500', 'bg-red-500');
+                els.bar_rdb_left.style.width = '100%';
+            } else {
+                els.v_rdb_left.classList.replace('text-red-600', 'text-slate-800');
+                els.bar_rdb_left.classList.replace('bg-red-500', 'bg-blue-500');
+                els.bar_rdb_left.style.width = Math.min(rdbPercent, 100) + '%';
+            }
+
+            if (m.currentMargin < state.globals.margin) {
+                els.card_margin.classList.add('border-red-300', 'bg-red-50');
+                els.v_margin_percent.classList.replace('text-slate-800', 'text-red-600');
+            } else {
+                els.card_margin.classList.remove('border-red-300', 'bg-red-50');
+                els.v_margin_percent.classList.replace('text-red-600', 'text-slate-800');
+            }
+
+            if (m.expectedProfit < 0) {
+                els.v_profit.classList.replace('text-green-600', 'text-red-600');
+            } else {
+                els.v_profit.classList.replace('text-red-600', 'text-green-600');
+            }
+
+            // Алерты
+            els.alertsContainer.innerHTML = m.alerts.map(a => {
+                let colors = '';
+                let icon = '';
+                if (a.type === 'error') {
+                    colors = 'bg-red-50 border-red-200 text-red-800';
+                    icon = '<svg class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+                } else if (a.type === 'warning') {
+                    colors = 'bg-yellow-50 border-yellow-200 text-yellow-800';
+                    icon = '<svg class="w-5 h-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>';
+                } else {
+                    colors = 'bg-blue-50 border-blue-200 text-blue-800';
+                    icon = '<svg class="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+                }
+                
+                return `
+                    <div class="p-4 rounded-lg border flex gap-3 ${colors}">
+                        <div class="shrink-0 mt-0.5">${icon}</div>
+                        <div>
+                            <h4 class="font-bold text-sm">${a.title}</h4>
+                            <p class="text-sm opacity-90 mt-1">${a.msg}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            updateTableFooter(m);
+            return m;
+        }
+
+        function updateTableFooter(metrics) {
+            if (state.team.length === 0) {
+                els.teamFoot.classList.add('hidden');
+                els.teamFoot.innerHTML = '';
+                return;
+            }
+            els.teamFoot.classList.remove('hidden');
+
+            const count = state.team.length;
+            const totalSum = metrics.pureTeamCost;
+            
+            const duration = state.globals.duration > 0 ? state.globals.duration : 1;
+            const sumHours = state.team.reduce((acc, m) => acc + (parseInt(m.hours) || 0), 0);
+            
+            // Расчет требуемого среднего значения
+            const avgTrueRate = sumHours > 0 ? (totalSum / duration / sumHours) : 0;
+
+            els.teamFoot.innerHTML = `
+                <tr>
+                    <td class="p-2 font-semibold text-slate-800 text-center text-xs uppercase tracking-wider align-middle">Итого:</td>
+                    <td class="p-2 font-semibold text-slate-800 align-middle">
+                        <div class="px-2 whitespace-nowrap">${count} сотр.</div>
+                    </td>
+                    <td class="p-2 align-middle"></td>
+                    <td class="p-2 align-middle"></td>
+                    <td class="p-2 align-middle"></td>
+                    <td class="p-2 font-bold text-slate-900 align-middle">
+                        <div class="px-2">${formatNumberStr(sumHours)}</div>
+                    </td>
+                    <td class="p-2 font-bold text-slate-900 text-right align-middle">${formatCurrency(avgTrueRate)}</td>
+                    <td class="p-2 font-bold text-slate-900 text-right align-middle">${formatCurrency(totalSum)}</td>
+                    <td class="p-2 align-middle"></td>
+                </tr>
+            `;
+        }
+
+        function renderTableFull() {
+            if (state.team.length === 0) {
+                els.teamBody.innerHTML = '';
+                els.emptyState.classList.remove('hidden');
+                calculateAndUpdate();
+                return;
+            }
+            
+            els.emptyState.classList.add('hidden');
+            const metrics = calculateMetrics();
+            
+            let html = '';
+            metrics.enrichedTeam.forEach((member, index) => {
+                html += `
+                    <tr class="hover:bg-slate-50 transition-colors" data-id="${member.id}">
+                        <td class="p-2 text-center text-slate-400 text-xs font-medium">${index + 1}</td>
+                        <td class="p-2 min-w-[150px]">
+                            <input type="text" data-id="${member.id}" data-field="role" value="${member.role}" class="w-full p-2 text-sm rounded border border-transparent hover:border-slate-300 focus:border-blue-500 bg-transparent focus:bg-white transition-all outline-none" placeholder="Название роли">
+                        </td>
+                        <td class="p-2 min-w-[140px]">
+                            <select data-id="${member.id}" data-field="type" class="w-full p-2 text-sm rounded border border-transparent hover:border-slate-300 focus:border-blue-500 bg-transparent focus:bg-white outline-none cursor-pointer">
+                                <option value="inhouse" ${member.type === 'inhouse' ? 'selected' : ''}>В штате</option>
+                                <option value="contractor" ${member.type === 'contractor' ? 'selected' : ''}>ГПХ (Аутсорс)</option>
+                            </select>
+                        </td>
+                        <td class="p-2 min-w-[110px]">
+                            <select data-id="${member.id}" data-field="grade" class="w-full p-2 text-sm rounded border border-transparent hover:border-slate-300 focus:border-blue-500 bg-transparent focus:bg-white outline-none cursor-pointer">
+                                <option value="junior" ${member.grade === 'junior' ? 'selected' : ''}>Junior</option>
+                                <option value="middle" ${member.grade === 'middle' ? 'selected' : ''}>Middle</option>
+                                <option value="senior" ${member.grade === 'senior' ? 'selected' : ''}>Senior</option>
+                                <option value="lead" ${member.grade === 'lead' ? 'selected' : ''}>Lead</option>
+                            </select>
+                        </td>
+                        <td class="p-2 relative min-w-[120px]">
+                            <input type="text" data-id="${member.id}" data-field="basis" value="${formatNumberStr(member.basis)}" class="w-full p-2 text-sm rounded border border-transparent hover:border-slate-300 focus:border-blue-500 bg-transparent focus:bg-white transition-all outline-none" placeholder="0">
+                        </td>
+                        <td class="p-2 min-w-[80px]">
+                            <input type="text" data-id="${member.id}" data-field="hours" value="${member.hours}" class="w-full p-2 text-sm rounded border border-transparent hover:border-slate-300 focus:border-blue-500 bg-transparent focus:bg-white transition-all outline-none" placeholder="160">
+                        </td>
+                        <td class="p-2 text-right font-medium text-slate-700 bg-slate-50/50 whitespace-nowrap">
+                            ${formatCurrency(member.trueHourlyRate)}
+                        </td>
+                        <td class="p-2 text-right font-bold text-slate-800 bg-slate-50/50 whitespace-nowrap">
+                            ${formatCurrency(member.memberTotalCost)}
+                        </td>
+                        <td class="p-2 text-center">
+                            <button onclick="removeMember('${member.id}')" class="text-slate-400 hover:text-red-500 transition-colors p-1 delete-btn" title="Удалить">
+                                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            els.teamBody.innerHTML = html;
+            
+            // Навешиваем обработчики на инпуты таблицы
+            els.teamBody.querySelectorAll('input, select').forEach(input => {
+                input.addEventListener('input', (e) => {
+                    const id = e.target.dataset.id;
+                    const field = e.target.dataset.field;
+                    const member = state.team.find(m => m.id === id);
+                    if (member) {
+                        let val = e.target.value;
+                        if (field === 'basis') {
+                            val = parseNumberStr(val);
+                            e.target.value = formatNumberStr(val);
+                        }
+                        member[field] = val;
+                        const mInfo = calculateAndUpdate();
+                        const updatedMember = mInfo.enrichedTeam.find(m => m.id === id);
+                        const row = els.teamBody.querySelector(`tr[data-id="${id}"]`);
+                        if (row && updatedMember) {
+                            row.children[6].textContent = formatCurrency(updatedMember.trueHourlyRate);
+                            row.children[7].textContent = formatCurrency(updatedMember.memberTotalCost);
+                        }
+                    }
+                });
+            });
+
+            calculateAndUpdate();
+        }
+
+        window.removeMember = function(id) {
+            state.team = state.team.filter(m => m.id !== id);
+            renderTableFull();
+        };
+
+        els.addMemberBtn.addEventListener('click', () => {
+            state.team.push({
+                id: Date.now().toString(),
+                role: '',
+                type: 'inhouse',
+                grade: 'middle',
+                basis: '150000',
+                hours: '160'
+            });
+            renderTableFull();
+        });
+
+        // Слушатели глобальных параметров
+        els.inputs.forEach(input => {
+            input.addEventListener('input', (e) => {
+                const id = e.target.id.replace('g_', '');
+                let val = parseNumberStr(e.target.value);
+                state.globals[id] = val;
+                
+                if (!['overheads', 'margin', 'tax', 'bonus', 'duration'].includes(id)) {
+                    e.target.value = formatNumberStr(val);
+                }
+                
+                const metrics = calculateAndUpdate();
+
+                if (['tax', 'bonus', 'onboarding', 'rent', 'perks', 'it'].includes(id)) {
+                    metrics.enrichedTeam.forEach(updatedMember => {
+                        const row = els.teamBody.querySelector(`tr[data-id="${updatedMember.id}"]`);
+                        if (row) {
+                            row.children[6].textContent = formatCurrency(updatedMember.trueHourlyRate);
+                            row.children[7].textContent = formatCurrency(updatedMember.memberTotalCost);
+                        }
+                    });
+                }
+                
+                if (id === 'duration') {
+                    renderTableFull();
+                }
+            });
+
+            input.addEventListener('blur', (e) => {
+                const id = e.target.id.replace('g_', '');
+                if (!['overheads', 'margin', 'tax', 'bonus', 'duration'].includes(id)) {
+                    e.target.value = formatNumberStr(state.globals[id]);
+                }
+            });
+        });
+
+        // Экспорт в Excel (SheetJS)
+        document.getElementById('btnExportExcel').addEventListener('click', () => {
+            const excelData = [];
+            const metrics = calculateMetrics();
+
+            // 1. Блок Основные параметры
+            excelData.push(["ОСНОВНЫЕ ПАРАМЕТРЫ", ""]);
+            excelData.push(["Выручка, ₽", state.globals.revenue]);
+            excelData.push(["Мин. выручка, ₽", metrics.minRevenue === null ? "Расчет невозможен" : Math.round(metrics.minRevenue)]);
+            excelData.push(["Длительность, мес", state.globals.duration]);
+            excelData.push(["Закупки (разово), ₽", state.globals.purchases]);
+            excelData.push(["Накладные расходы, % от выручки", state.globals.overheads]);
+            excelData.push(["Цел. маржа, %", state.globals.margin]);
+            excelData.push([]);
+
+            // 2. Блок Нагрузка на ФОТ
+            excelData.push(["НАГРУЗКА НА ФОТ", ""]);
+            excelData.push(["Налог на ФОТ, %", state.globals.tax]);
+            excelData.push(["Годовая премия, %", state.globals.bonus]);
+            excelData.push(["Подбор (разово/чел), ₽", state.globals.onboarding]);
+            excelData.push(["Аренда (мес/чел), ₽", state.globals.rent]);
+            excelData.push(["ДМС (мес/чел), ₽", state.globals.perks]);
+            excelData.push(["ИТ (мес/чел), ₽", state.globals.it]);
+            excelData.push([]);
+
+            // 3. Блок Метрики Дашборда
+            excelData.push(["КЛЮЧЕВЫЕ МЕТРИКИ", ""]);
+            excelData.push(["Общий РДБ (Лимит), ₽", Math.round(metrics.totalRDB)]);
+            excelData.push(["Все расходы проекта, ₽", Math.round(metrics.allExpenses)]);
+            excelData.push(["Остаток РДБ, ₽", Math.round(metrics.rdbLeft)]);
+            excelData.push(["Ожидаемая прибыль, ₽", Math.round(metrics.expectedProfit)]);
+            excelData.push(["Текущая маржинальность, %", metrics.currentMargin.toFixed(1) + '%']);
+            excelData.push([]);
+
+            // 4. Блок Конструктор Команды
+            excelData.push(["КОНСТРУКТОР КОМАНДЫ"]);
+            excelData.push(["№", "Роль / Позиция", "Занятость", "Грейд", "Оклад(мес) / Ставка(час)", "Часы (в мес)", "True Cost (Среднее в мес)", "Сумма по специалисту"]);
+            
+            let sumHours = 0;
+            metrics.enrichedTeam.forEach((member, index) => {
+                sumHours += (parseInt(member.hours) || 0);
+                const typeStr = member.type === 'inhouse' ? 'В штате' : 'ГПХ (Аутсорс)';
+                let gradeStr = 'Middle';
+                if(member.grade === 'junior') gradeStr = 'Junior';
+                if(member.grade === 'senior') gradeStr = 'Senior';
+                if(member.grade === 'lead') gradeStr = 'Lead';
+
+                excelData.push([
+                    index + 1, member.role || 'Без названия', typeStr, gradeStr,
+                    member.basis, member.hours, Math.round(member.trueHourlyRate), Math.round(member.memberTotalCost)
+                ]);
+            });
+            
+            const count = state.team.length;
+            const duration = state.globals.duration > 0 ? state.globals.duration : 1;
+            const avgTrueRate = sumHours > 0 ? (metrics.pureTeamCost / duration / sumHours) : 0;
+
+            excelData.push([]); 
+            excelData.push(["ИТОГО:", `${count} сотр.`, "", "", "", sumHours, Math.round(avgTrueRate), Math.round(metrics.pureTeamCost)]);
+
+            const ws = XLSX.utils.aoa_to_sheet(excelData);
+            
+            ws['!cols'] = [
+                {wch: 30}, {wch: 25}, {wch: 15}, {wch: 15},
+                {wch: 22}, {wch: 15}, {wch: 25}, {wch: 25}
+            ];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "PM_Sandbox");
+            XLSX.writeFile(wb, "Project_Budget.xlsx");
+        });
+
+        // Экспорт в PDF
+        document.getElementById('btnExportPDF').addEventListener('click', async () => {
+            const exportButton = document.getElementById('btnExportPDF');
+            const originalButtonHtml = exportButton.innerHTML;
+            let printContainer = null;
+
+            try {
+                exportButton.disabled = true;
+                exportButton.innerHTML = 'Формирование...';
+
+                if (document.fonts && document.fonts.ready) {
+                    await document.fonts.ready;
+                }
+
+                const source = document.getElementById('dashboard-content');
+                const elementToPrint = source.cloneNode(true);
+
+                const sourceInputs = source.querySelectorAll('input');
+                const clonedInputs = elementToPrint.querySelectorAll('input');
+                sourceInputs.forEach((input, index) => {
+                    if (clonedInputs[index]) clonedInputs[index].value = input.value;
+                });
+
+                const sourceSelects = source.querySelectorAll('select');
+                const clonedSelects = elementToPrint.querySelectorAll('select');
+                sourceSelects.forEach((select, index) => {
+                    if (clonedSelects[index]) clonedSelects[index].selectedIndex = select.selectedIndex;
+                });
+
+                printContainer = document.createElement('div');
+                printContainer.id = 'pdf-export-container';
+                Object.assign(printContainer.style, {
+                    position: 'fixed', left: '-100000px', top: '0', width: '1400px', padding: '24px',
+                    boxSizing: 'border-box', backgroundColor: '#f8fafc', color: '#1e293b',
+                    fontFamily: "'Inter', Arial, sans-serif", zIndex: '-1'
+                });
+
+                elementToPrint.classList.remove('mx-auto', 'max-w-[1600px]', 'flex-col', 'xl:flex-row');
+                Object.assign(elementToPrint.style, {
+                    display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: '24px',
+                    width: '100%', maxWidth: 'none', padding: '0', margin: '0', boxSizing: 'border-box'
+                });
+
+                const aside = elementToPrint.querySelector('aside');
+                if (aside) {
+                    aside.classList.remove('w-full', 'xl:w-80');
+                    Object.assign(aside.style, { width: '300px', minWidth: '300px', flex: '0 0 300px' });
+                }
+
+                const contentColumn = elementToPrint.querySelector(':scope > div');
+                if (contentColumn) {
+                    Object.assign(contentColumn.style, { width: 'calc(100% - 324px)', minWidth: '0', flex: '1 1 auto' });
+                }
+
+                const kpiGrid = elementToPrint.querySelector('.grid');
+                if (kpiGrid) {
+                    Object.assign(kpiGrid.style, { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '16px' });
+                }
+
+                const tableScrollWrap = elementToPrint.querySelector('.overflow-x-auto');
+                if (tableScrollWrap) {
+                    tableScrollWrap.classList.remove('overflow-x-auto');
+                    Object.assign(tableScrollWrap.style, { overflow: 'visible', width: '100%', paddingBottom: '0' });
+                }
+
+                const tableCard = elementToPrint.querySelector('table')?.closest('.overflow-hidden');
+                if (tableCard) tableCard.style.overflow = 'visible';
+
+                const table = elementToPrint.querySelector('table');
+                if (table) {
+                    table.classList.remove('min-w-[900px]');
+                    Object.assign(table.style, { width: '100%', minWidth: '0', tableLayout: 'fixed', fontSize: '12px' });
+
+                    const columnWidths = ['4%', '18%', '15%', '10%', '17%', '10%', '13%', '13%', '0'];
+                    table.querySelectorAll('tr').forEach(row => {
+                        Array.from(row.children).forEach((cell, index) => {
+                            if (index === 8) {
+                                cell.style.display = 'none';
+                                return;
+                            }
+                            cell.style.width = columnWidths[index];
+                            cell.style.boxSizing = 'border-box';
+                            cell.style.padding = '8px 6px';
+                            cell.style.verticalAlign = 'middle';
+                        });
+                    });
+
+                    table.querySelectorAll('th').forEach(th => {
+                        th.style.fontSize = '10px';
+                        th.style.lineHeight = '1.25';
+                    });
+
+                    table.querySelectorAll('tr').forEach(row => {
+                        [0, 3, 4, 5, 6, 7].forEach(index => {
+                            const cell = row.children[index];
+                            if (cell) cell.style.whiteSpace = 'nowrap';
+                        });
+                    });
+                }
+
+                elementToPrint.querySelectorAll('#v_rdb, #v_rdb_left, #v_profit, #v_margin_percent, #v_minRevenue, #v_all_expenses').forEach(el => {
+                    el.style.whiteSpace = 'nowrap';
+                });
+
+                elementToPrint.querySelectorAll('.delete-btn, #addMemberBtn').forEach(el => {
+                    el.style.display = 'none';
+                });
+
+                elementToPrint.querySelectorAll('.tooltip-text').forEach(el => {
+                    el.style.display = 'none';
+                });
+
+                elementToPrint.querySelectorAll('input').forEach(input => {
+                    const span = document.createElement('span');
+                    span.textContent = input.value;
+                    Object.assign(span.style, {
+                        display: 'block', width: '100%', boxSizing: 'border-box', fontSize: '12px',
+                        lineHeight: '1.35', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap',
+                        textAlign: input.classList.contains('text-right') ? 'right' : 'left'
+                    });
+                    input.parentNode.replaceChild(span, input);
+                });
+
+                elementToPrint.querySelectorAll('select').forEach(select => {
+                    const span = document.createElement('span');
+                    span.textContent = select.options[select.selectedIndex]?.text || '';
+                    Object.assign(span.style, {
+                        display: 'block', width: '100%', boxSizing: 'border-box', fontSize: '12px',
+                        lineHeight: '1.35', fontWeight: '500', color: '#1e293b', whiteSpace: 'nowrap'
+                    });
+                    select.parentNode.replaceChild(span, select);
+                });
+
+                elementToPrint.querySelectorAll('aside > div, .grid > div, tr, #alertsContainer > div').forEach(el => {
+                    el.style.breakInside = 'avoid';
+                    el.style.pageBreakInside = 'avoid';
+                });
+
+                printContainer.appendChild(elementToPrint);
+                document.body.appendChild(printContainer);
+
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+                const contentWidth = printContainer.scrollWidth;
+                const contentHeight = printContainer.scrollHeight;
+
+                const canvas = await html2canvas(printContainer, {
+                    scale: 2, useCORS: true, allowTaint: false, logging: false,
+                    backgroundColor: '#f8fafc', width: contentWidth, height: contentHeight,
+                    windowWidth: contentWidth, windowHeight: contentHeight, scrollX: 0, scrollY: 0
+                });
+
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3', compress: true });
+
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                const margin = 8;
+                const printableWidth = pageWidth - margin * 2;
+                const printableHeight = pageHeight - margin * 2;
+                const pixelsPerMm = canvas.width / printableWidth;
+                const nominalPageHeightPx = Math.floor(printableHeight * pixelsPerMm);
+                const domToCanvasScale = canvas.width / printContainer.getBoundingClientRect().width;
+                const containerTop = printContainer.getBoundingClientRect().top;
+
+                const breakSelectors = ['aside > div', ':scope > main > div > .grid', 'thead', 'tbody > tr', 'tfoot > tr', '#alertsContainer > div'];
+                const breakPoints = new Set([0, canvas.height]);
+
+                breakSelectors.forEach(selector => {
+                    printContainer.querySelectorAll(selector).forEach(el => {
+                        const rect = el.getBoundingClientRect();
+                        const bottom = Math.round((rect.bottom - containerTop) * domToCanvasScale);
+                        if (bottom > 0 && bottom < canvas.height) breakPoints.add(bottom);
+                    });
+                });
+
+                const sortedBreakPoints = Array.from(breakPoints).sort((a, b) => a - b);
+                let sourceY = 0;
+                let pageIndex = 0;
+
+                while (sourceY < canvas.height) {
+                    const nominalEnd = Math.min(sourceY + nominalPageHeightPx, canvas.height);
+                    let sourceEnd = nominalEnd;
+
+                    if (nominalEnd < canvas.height) {
+                        const minimumUsefulEnd = sourceY + nominalPageHeightPx * 0.55;
+                        const candidates = sortedBreakPoints.filter(point => point > minimumUsefulEnd && point <= nominalEnd);
+                        if (candidates.length) sourceEnd = candidates[candidates.length - 1];
+                    }
+
+                    const sliceHeight = Math.max(1, sourceEnd - sourceY);
+                    const pageCanvas = document.createElement('canvas');
+                    pageCanvas.width = canvas.width;
+                    pageCanvas.height = sliceHeight;
+
+                    const pageContext = pageCanvas.getContext('2d');
+                    pageContext.fillStyle = '#f8fafc';
+                    pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+                    pageContext.drawImage(
+                        canvas, 0, sourceY, canvas.width, sliceHeight,
+                        0, 0, canvas.width, sliceHeight
+                    );
+
+                    const renderedHeight = sliceHeight / pixelsPerMm;
+                    if (pageIndex > 0) pdf.addPage('a3', 'landscape');
+                    pdf.addImage(
+                        pageCanvas.toDataURL('image/jpeg', 0.96), 'JPEG',
+                        margin, margin, printableWidth, renderedHeight, undefined, 'FAST'
+                    );
+
+                    sourceY = sourceEnd;
+                    pageIndex++;
+                }
+
+                pdf.save('Project_Budget.pdf');
+            } catch (error) {
+                console.error('Ошибка экспорта PDF:', error);
+                
+                // Отображение ошибки вместо alert()
+                const errAlert = document.createElement('div');
+                errAlert.className = 'p-4 rounded-lg border bg-red-50 border-red-200 text-red-800 flex gap-3 mt-4';
+                errAlert.innerHTML = `
+                    <div class="shrink-0 mt-0.5">
+                        <svg class="w-5 h-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-sm">Ошибка экспорта</h4>
+                        <p class="text-sm opacity-90 mt-1">Не удалось сформировать PDF. Проверьте консоль браузера.</p>
+                    </div>
+                `;
+                document.getElementById('alertsContainer').prepend(errAlert);
+                setTimeout(() => errAlert.remove(), 6000);
+            } finally {
+                if (printContainer && printContainer.parentNode) {
+                    printContainer.parentNode.removeChild(printContainer);
+                }
+                exportButton.disabled = false;
+                exportButton.innerHTML = originalButtonHtml;
+            }
+        });
+
+        // Первичная инициализация
+        calculateAndUpdate();
+    </script>
+</body>
+</html>
